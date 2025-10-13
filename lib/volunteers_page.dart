@@ -15,19 +15,21 @@ class _VolunteersPageState extends State<VolunteersPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("Volunteers"),
+        title: const Text("Volunteers"),
         backgroundColor: Colors.red,
       ),
       body: Column(
         children: [
-          // 🔍 Search bar
+          // 🔍 Search Bar
           Padding(
             padding: const EdgeInsets.all(12),
             child: TextField(
               decoration: InputDecoration(
                 hintText: "Search by name or address",
-                prefixIcon: Icon(Icons.search),
-                border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                prefixIcon: const Icon(Icons.search),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
               ),
               onChanged: (value) {
                 setState(() {
@@ -37,19 +39,29 @@ class _VolunteersPageState extends State<VolunteersPage> {
             ),
           ),
 
-          // 🔁 Real-time Firestore Stream
+          // 🔁 Firestore Stream — Works Offline with Cache
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
               stream: FirebaseFirestore.instance
                   .collection('volunteers')
                   .orderBy('timestamp', descending: true)
-                  .snapshots(),
+                  .snapshots(includeMetadataChanges: true),
               builder: (context, snapshot) {
-                if (!snapshot.hasData) return Center(child: CircularProgressIndicator());
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator());
+                }
+
+                if (snapshot.hasError) {
+                  return const Center(child: Text("Error loading volunteers."));
+                }
+
+                if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                  return const Center(child: Text("No volunteers found."));
+                }
 
                 final docs = snapshot.data!.docs;
 
-                // 🔍 Filter by name or address
+                // 🔍 Filter by search text (name or address)
                 final filteredDocs = docs.where((doc) {
                   final data = doc.data() as Map<String, dynamic>;
                   final name = data['username']?.toLowerCase() ?? '';
@@ -58,19 +70,20 @@ class _VolunteersPageState extends State<VolunteersPage> {
                 }).toList();
 
                 if (filteredDocs.isEmpty) {
-                  return Center(child: Text("No volunteers found."));
+                  return const Center(child: Text("No matching volunteers found."));
                 }
 
+                // 📋 Display the volunteer list
                 return ListView.builder(
                   itemCount: filteredDocs.length,
                   itemBuilder: (context, index) {
                     final data = filteredDocs[index].data() as Map<String, dynamic>;
 
                     return Card(
-                      margin: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                       elevation: 3,
                       child: ListTile(
-                        leading: CircleAvatar(
+                        leading: const CircleAvatar(
                           backgroundColor: Colors.redAccent,
                           child: Icon(Icons.person, color: Colors.white),
                         ),
@@ -97,4 +110,3 @@ class _VolunteersPageState extends State<VolunteersPage> {
     );
   }
 }
-

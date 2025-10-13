@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:flutter_sms/flutter_sms.dart'; // ✅ Import this
+import 'package:flutter_sms/flutter_sms.dart';
+import 'package:permission_handler/permission_handler.dart'; // ✅ For runtime SMS permission
 
 class OfflineAlertPage extends StatefulWidget {
   const OfflineAlertPage({super.key});
@@ -24,9 +25,7 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
       final fetchedNumbers = snapshot.docs
           .map((doc) => doc.data()['phone']?.toString().trim())
           .where((phone) =>
-              phone != null &&
-              phone.isNotEmpty &&
-              seen.add(phone!))
+              phone != null && phone.isNotEmpty && seen.add(phone!))
           .toList();
 
       setState(() {
@@ -41,7 +40,16 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
     }
   }
 
-  // ✅ Open native SMS app and send to all recipients
+  // ✅ Ask permission before sending SMS
+  Future<bool> _checkPermission() async {
+    var status = await Permission.sms.status;
+    if (!status.isGranted) {
+      status = await Permission.sms.request();
+    }
+    return status.isGranted;
+  }
+
+  // ✅ Send SMS directly to all recipients
   Future<void> _sendSMS(String message, List<String> recipients) async {
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -56,23 +64,28 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
       return;
     }
 
-    setState(() {
-      isSending = true;
-    });
+    final hasPermission = await _checkPermission();
+    if (!hasPermission) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("❌ SMS permission denied")),
+      );
+      return;
+    }
+
+    setState(() => isSending = true);
 
     try {
-      // This opens the phone's SMS app with all recipients prefilled
       String result = await sendSMS(
         message: message,
         recipients: recipients,
-        sendDirect: false, // 🔹 false → opens default SMS app
+        sendDirect: true, // ✅ Sends automatically (no SMS app)
       );
 
       print("SMS Result: $result");
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text("✅ SMS app opened with all recipients"),
+          content: Text("✅ SMS sent successfully to all users!"),
           backgroundColor: Colors.green,
         ),
       );
@@ -81,7 +94,7 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text("❌ Failed to open SMS app: $e"),
+          content: Text("❌ Failed to send SMS: $e"),
           backgroundColor: Colors.red,
         ),
       );
@@ -100,7 +113,7 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text("Offline Alert (SMS)"),
+        title: const Text("Offline Alert (Direct SMS)"),
         backgroundColor: Colors.orange,
       ),
       body: isLoading
@@ -122,13 +135,13 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
                   ElevatedButton.icon(
                     onPressed: (phoneNumbers.isNotEmpty && !isSending)
                         ? () => _sendSMS(
-                            _messageController.text.trim(),
-                            phoneNumbers,
-                          )
+                              _messageController.text.trim(),
+                              phoneNumbers,
+                            )
                         : null,
                     icon: const Icon(Icons.sms),
                     label: isSending
-                        ? const Text("Opening SMS app...")
+                        ? const Text("Sending SMS...")
                         : const Text("Send SMS to All"),
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.orange,
