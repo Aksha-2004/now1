@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class OfflineAlertPage extends StatefulWidget {
   const OfflineAlertPage({super.key});
@@ -13,35 +13,37 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
   final TextEditingController _messageController = TextEditingController();
   List<String> phoneNumbers = [];
   bool isLoading = true;
-  bool isSending = false;
 
-  // Load phone numbers from Firestore
+  // ✅ Load phone numbers from Firestore
   Future<void> _loadPhoneNumbers() async {
     try {
-      final snapshot = await FirebaseFirestore.instance.collection('users').get();
-      final seen = <String>{};
+      final snapshot =
+          await FirebaseFirestore.instance.collection('users').get();
 
+      final seen = <String>{};
       final fetchedNumbers = snapshot.docs
           .map((doc) => doc.data()['phone']?.toString().trim())
-          .where((phone) => phone != null && phone.isNotEmpty && seen.add(phone!))
+          .where((phone) =>
+              phone != null && phone.isNotEmpty && seen.add(phone!))
+          .cast<String>()
           .toList();
 
       setState(() {
-        phoneNumbers = fetchedNumbers.cast<String>();
+        phoneNumbers = fetchedNumbers;
         isLoading = false;
       });
     } catch (e) {
-      setState(() {
-        isLoading = false;
-      });
+      setState(() => isLoading = false);
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("⚠️ Error loading phone numbers: $e")),
+        SnackBar(content: Text("❌ Error loading numbers: $e")),
       );
     }
   }
 
-  // Send SMS using Firebase Cloud Function (Twilio)
-  Future<void> _sendSMS(String message, List<String> recipients) async {
+  // ✅ Open SMS app with ALL numbers + message filled
+  Future<void> _openSMSApp() async {
+    final message = _messageController.text.trim();
+
     if (message.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("⚠️ Message cannot be empty")),
@@ -49,35 +51,24 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
       return;
     }
 
-    setState(() {
-      isSending = true;
-    });
-
-    try {
-      final functions = FirebaseFunctions.instance;
-
-      for (String phone in recipients) {
-        final result = await functions.httpsCallable('sendSMS').call({
-          'to': phone,         // recipient number including country code, e.g., '+919876543210'
-          'message': message,  // message text
-        });
-
-        print(result.data['result']); // logs SMS status
-      }
-
+    if (phoneNumbers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text("✅ SMS Alert sent to all recipients"), backgroundColor: Colors.green),
+        const SnackBar(content: Text("⚠️ No phone numbers found")),
       );
+      return;
+    }
 
-      _messageController.clear();
-    } catch (e) {
+    final numbers = phoneNumbers.join(',');
+    final uri = Uri.parse(
+      "sms:$numbers?body=${Uri.encodeComponent(message)}",
+    );
+
+    if (await canLaunchUrl(uri)) {
+      await launchUrl(uri);
+    } else {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text("❌ Failed to send SMS: $e"), backgroundColor: Colors.red),
+        const SnackBar(content: Text("❌ Could not open SMS app")),
       );
-    } finally {
-      setState(() {
-        isSending = false;
-      });
     }
   }
 
@@ -106,23 +97,23 @@ class _OfflineAlertPageState extends State<OfflineAlertPage> {
                     decoration: const InputDecoration(
                       labelText: "Alert Message",
                       border: OutlineInputBorder(),
-                      hintText: "Type the disaster alert here...",
+                      hintText: "Type disaster alert here...",
                     ),
                   ),
-                  const SizedBox(height: 10),
+                  const SizedBox(height: 12),
                   ElevatedButton.icon(
-                    onPressed: (phoneNumbers.isNotEmpty && !isSending)
-                        ? () => _sendSMS(_messageController.text.trim(), phoneNumbers)
-                        : null,
+                    onPressed: _openSMSApp,
                     icon: const Icon(Icons.sms),
-                    label: isSending
-                        ? const Text("Sending...")
-                        : const Text("Send SMS to All"),
-                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange),
+                    label: const Text("Send SMS to All"),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.orange,
+                    ),
                   ),
-                  const SizedBox(height: 20),
-                  Text("📋 Total Recipients: ${phoneNumbers.length}",
-                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  Text(
+                    "📋 Total Recipients: ${phoneNumbers.length}",
+                    style: const TextStyle(fontWeight: FontWeight.bold),
+                  ),
                   const SizedBox(height: 6),
                   Expanded(
                     child: ListView.builder(
